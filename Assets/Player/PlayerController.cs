@@ -1,6 +1,6 @@
 using UnityEngine;
 
-[RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
@@ -8,65 +8,104 @@ public class PlayerController : MonoBehaviour
     public float runSpeed = 7f;
     public float crouchSpeed = 2f;
     public float jumpForce = 7f;
+    public float gravity = -25f;
 
     [Header("Crouch Settings")]
     public float crouchHeight = 1f;
     public float normalHeight = 2f;
-    public Transform playerBody;
+    public float heightLerpSpeed = 10f;
 
     [Header("Mouse Look Settings")]
     public Transform cameraHolder;
     public float mouseSensitivity = 2f;
     public float maxLookAngle = 80f;
 
-    private Rigidbody rb;
-    private Vector2 input;
-    private float rotationX = 0f;
-    public bool IsGrounded { get; private set; }
-    private bool isCrouching = false;
-
-    private float currentSpeed;
+    [Header("Animation")]
     public Animator animator;
     public Animator gunAnimator;
+
+    [Header("Jump Buffer")]
+    public float jumpBufferTime = 0.12f;
+    private float jumpBufferCounter;
+
+    public float cameraStandHeight = 1.6f;
+    public float cameraCrouchHeight = 1.0f;
+
+    // Coyote Time
+    public float coyoteTimeMax = 0.12f;
+    private float coyoteTimeCounter;
+
+    // Fall tuning
+    public float fallMultiplier = 1.8f;
+    public float lowJumpMultiplier = 2.2f;
+
+    // Components
+    private CharacterController controller;
+
+    // State
+    private Vector2 input;
+    private Vector3 velocity;
+    private float rotationX;
+    private float currentSpeed;
+    private float targetHeight;
+    private bool isCrouching;
+
+    // Public info
+    public bool IsGrounded { get; private set; }
     public bool IsMoving { get; private set; }
     public bool IsRunning { get; private set; }
 
-
     void Start()
     {
-        rb = GetComponent<Rigidbody>();
+        controller = GetComponent<CharacterController>();
+
+        controller.height = normalHeight;
+        controller.center = new Vector3(0f, normalHeight / 2f, 0f);
+
+        if (cameraHolder != null)
+            cameraHolder.localPosition = new Vector3(0f, cameraStandHeight, 0f);
+
+        targetHeight = normalHeight;
+
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
-
-        if (playerBody == null)
-            playerBody = this.transform;
-    }
+        }
 
     void Update()
-    { 
+    {
+        ReadInput();
         HandleMouseLook();
-        HandleJump();
         HandleSpeed();
         HandleCrouch();
-        float movementAmount = new Vector2(input.x, input.y).magnitude;
 
-        if (gunAnimator != null)
-        {
-            gunAnimator.SetFloat("Speed", movementAmount);
-            gunAnimator.SetBool("IsRunning", Input.GetKey(KeyCode.LeftShift));
-        }
-        IsMoving = input.magnitude > 0.1f;
-        IsRunning = Input.GetKey(KeyCode.LeftShift);
-        IsGrounded = Physics.Raycast(transform.position, Vector3.down, 1.1f); // проверь длину в зависимости от размера игрока
+        HandleJump();
+        ApplyGravity();
+
+        ApplyMovement();
+
+        UpdateAnimator();
     }
-    void FixedUpdate()
+
+    // ================= INPUT =================
+
+    void ReadInput()
     {
-        input.x = Input.GetAxis("Horizontal");
-        input.y = Input.GetAxis("Vertical");
-        Vector3 move = transform.forward * input.y + transform.right * input.x;
-        Vector3 newPosition = rb.position + move * currentSpeed * Time.fixedDeltaTime;
-        rb.MovePosition(newPosition);
+        input.x = Input.GetAxisRaw("Horizontal");
+        input.y = Input.GetAxisRaw("Vertical");
+
+        IsMoving = input.sqrMagnitude > 0.01f;
+        IsRunning = Input.GetKey(KeyCode.LeftShift) && !isCrouching;
+        if (Input.GetButtonDown("Jump"))
+        {
+            jumpBufferCounter = jumpBufferTime;
+        }
+        else
+        {
+            jumpBufferCounter -= Time.deltaTime;
+        }
     }
+
+    // ================= MOUSE LOOK =================
 
     void HandleMouseLook()
     {
@@ -80,61 +119,132 @@ public class PlayerController : MonoBehaviour
         cameraHolder.localRotation = Quaternion.Euler(rotationX, 0f, 0f);
     }
 
-    void HandleJump()
-    {
-        if (Input.GetButtonDown("Jump") && IsGrounded)
-        {
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-            IsGrounded = false;
-        }
-    }
+    // ================= MOVEMENT =================
 
     void HandleSpeed()
     {
         if (isCrouching)
             currentSpeed = crouchSpeed;
-        else if (Input.GetKey(KeyCode.LeftShift))
+        else if (IsRunning)
             currentSpeed = runSpeed;
         else
             currentSpeed = walkSpeed;
     }
 
-    void HandleCrouch()
-    {   
-    if (Input.GetKeyDown(KeyCode.LeftControl))
-    {
-        isCrouching = true;
-        SetHeight(crouchHeight);
-        if (animator != null)
-            animator.SetBool("isCrouching", true);
-    }
-    else if (Input.GetKeyUp(KeyCode.LeftControl))
-    {
-        isCrouching = false;
-        SetHeight(normalHeight);
-        if (animator != null)
-            animator.SetBool("isCrouching", false);
-    }
-    }
 
-    void SetHeight(float height)
-    {
-        Vector3 scale = playerBody.localScale;
-        scale.y = height / 2f;
-        playerBody.localScale = scale;
-    }
+    // ================= JUMP & GRAVITY =================
 
-    void OnCollisionStay(Collision collision)
+    void HandleJump()
     {
-        foreach (ContactPoint contact in collision.contacts)
+        IsGrounded = controller.isGrounded;
+
+        if (IsGrounded)
         {
-            if (Vector3.Angle(contact.normal, Vector3.up) < 45f)
-                IsGrounded = true;
+            coyoteTimeCounter = coyoteTimeMax;
+
+            // ВАЖНО: не затираем импульс прыжка
+            if (velocity.y < 0f)
+                velocity.y = -2f;
+        }
+        else
+        {
+            coyoteTimeCounter -= Time.deltaTime;
+        }
+
+        if (jumpBufferCounter > 0f && coyoteTimeCounter > 0f)
+        {
+            velocity.y = Mathf.Sqrt(jumpForce * -2f * gravity);
+            coyoteTimeCounter = 0f;
+            jumpBufferCounter = 0f;
         }
     }
 
-    void OnCollisionExit(Collision collision)
+
+
+    void ApplyGravity()
     {
-        IsGrounded = false;
+        if (velocity.y < 0f)
+        {
+            velocity.y += gravity * fallMultiplier * Time.deltaTime;
+        }
+        else if (velocity.y > 0f && !Input.GetButton("Jump"))
+        {
+            velocity.y += gravity * lowJumpMultiplier * Time.deltaTime;
+        }
+        else
+        {
+            velocity.y += gravity * Time.deltaTime;
+        }
+    }
+
+    void ApplyMovement()
+    {
+        Vector3 moveXZ =
+            transform.forward * input.y +
+            transform.right * input.x;
+
+        Vector3 finalMove =
+            moveXZ.normalized * currentSpeed +
+            Vector3.up * velocity.y;
+
+        controller.Move(finalMove * Time.deltaTime);
+    }
+
+
+
+
+    // ================= CROUCH =================
+
+    void HandleCrouch()
+    {
+        if (Input.GetKeyDown(KeyCode.LeftControl))
+        {
+            isCrouching = true;
+            targetHeight = crouchHeight;
+
+            if (animator != null)
+                animator.SetBool("isCrouching", true);
+        }
+        else if (Input.GetKeyUp(KeyCode.LeftControl))
+        {
+            isCrouching = false;
+            targetHeight = normalHeight;
+
+            if (animator != null)
+                animator.SetBool("isCrouching", false);
+        }
+
+        // Плавное изменение высоты CharacterController
+        controller.height = Mathf.Lerp(
+            controller.height,
+            targetHeight,
+            heightLerpSpeed * Time.deltaTime
+        );
+        float camTargetY = isCrouching ? cameraCrouchHeight : cameraStandHeight;
+
+        cameraHolder.localPosition = Vector3.Lerp(
+        cameraHolder.localPosition,
+        new Vector3(0f, camTargetY, 0f),
+        heightLerpSpeed * Time.deltaTime
+        );
+
+        controller.center = new Vector3(
+            0f,
+            controller.height / 2f,
+            0f
+        );
+    }
+
+    // ================= ANIMATION =================
+
+    void UpdateAnimator()
+    {
+        float movementAmount = new Vector2(input.x, input.y).magnitude;
+
+        if (gunAnimator != null)
+        {
+            gunAnimator.SetFloat("Speed", movementAmount);
+            gunAnimator.SetBool("IsRunning", IsRunning);
+        }
     }
 }
