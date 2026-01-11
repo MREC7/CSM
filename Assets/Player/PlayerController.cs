@@ -61,6 +61,7 @@ public class PlayerController : MonoBehaviour
 
         controller.height = normalHeight;
         controller.center = new Vector3(0f, normalHeight / 2f, 0f);
+        transform.position += Vector3.up * (controller.height / 2f);
 
         if (cameraHolder != null)
             cameraHolder.localPosition = new Vector3(0f, cameraStandHeight, 0f);
@@ -69,7 +70,7 @@ public class PlayerController : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
-        }
+    }
 
     void Update()
     {

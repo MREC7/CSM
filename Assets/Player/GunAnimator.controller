@@ -175,7 +175,7 @@ AnimatorState:
   m_MirrorParameterActive: 0
   m_CycleOffsetParameterActive: 0
   m_TimeParameterActive: 0
-  m_Motion: {fileID: 4333464597159480640, guid: 288d7597dd1609e4abedc4ebe1c51d43, type: 3}
+  m_Motion: {fileID: 4358224675751217230, guid: 0218c4b5e93dc5249bbb0de6219b4d3e, type: 3}
   m_Tag: 
   m_SpeedParameter: Speed
   m_MirrorParameter: 
@@ -197,12 +197,6 @@ AnimatorController:
     m_DefaultBool: 0
     m_Controller: {fileID: 9100000}
   - m_Name: IsRunning
-    m_Type: 4
-    m_DefaultFloat: 0
-    m_DefaultInt: 0
-    m_DefaultBool: 0
-    m_Controller: {fileID: 9100000}
-  - m_Name: IsCrouching
     m_Type: 4
     m_DefaultFloat: 0
     m_DefaultInt: 0
@@ -427,7 +421,7 @@ AnimatorState:
   m_MirrorParameterActive: 0
   m_CycleOffsetParameterActive: 0
   m_TimeParameterActive: 0
-  m_Motion: {fileID: 8040410940017549286, guid: 288d7597dd1609e4abedc4ebe1c51d43, type: 3}
+  m_Motion: {fileID: -1171395187455216293, guid: 0218c4b5e93dc5249bbb0de6219b4d3e, type: 3}
   m_Tag: 
   m_SpeedParameter: 
   m_MirrorParameter: 
