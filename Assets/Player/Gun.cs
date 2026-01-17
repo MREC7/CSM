@@ -20,10 +20,10 @@ public class Gun : MonoBehaviour
     private CameraShake cameraShake;
     public Light muzzleLight;
     public float lightDuration = 0.05f;
-    public int bulletsamount = 30;
-    public int totalbulletscount = 60;
-    public int defbulletsamount = 30;
-    public float reloadTime = 3f;
+    public int bulletsamount = 2;
+    public int totalbulletscount = 30;
+    public int defbulletsamount = 2;
+    public float reloadTime = 2f;
     private bool isReloading = false;
 
     private Coroutine flashRoutine;

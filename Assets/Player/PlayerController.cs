@@ -4,11 +4,15 @@ using UnityEngine;
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
-    public float walkSpeed = 4f;
-    public float runSpeed = 7f;
+    public float runSpeed = 13f;
     public float crouchSpeed = 2f;
     public float jumpForce = 7f;
     public float gravity = -25f;
+    
+    [Header("Dash Settings")]
+    public float dashSpeed = 30f;
+    public float dashDuration = 0.2f;
+    public float dashCooldown = 1f;
 
     [Header("Crouch Settings")]
     public float crouchHeight = 1f;
@@ -24,85 +28,154 @@ public class PlayerController : MonoBehaviour
     public Animator animator;
     public Animator gunAnimator;
 
-    [Header("Jump Buffer")]
+    [Header("Jump & Fall Settings")]
     public float jumpBufferTime = 0.12f;
-    private float jumpBufferCounter;
-
-    public float cameraStandHeight = 1.6f;
-    public float cameraCrouchHeight = 1.0f;
-
-    // Coyote Time
     public float coyoteTimeMax = 0.12f;
-    private float coyoteTimeCounter;
-
-    // Fall tuning
     public float fallMultiplier = 1.8f;
     public float lowJumpMultiplier = 2.2f;
 
-    // Components
-    private CharacterController controller;
+    [Header("Camera Heights")]
+    public float cameraStandHeight = 1.6f;
+    public float cameraCrouchHeight = 1.0f;
 
-    // State
+    // Components (cached)
+    private CharacterController controller;
+    private Transform cachedTransform;
+
+    // Input state (cached)
     private Vector2 input;
+    private bool jumpPressed;
+    private bool dashPressed;
+    private float mouseX;
+    private float mouseY;
+
+    // Movement state
     private Vector3 velocity;
+    private Vector3 dashDirection;
     private float rotationX;
     private float currentSpeed;
     private float targetHeight;
     private bool isCrouching;
+    private bool heightTransitioning;
+    private bool isDashing;
+    private float dashTimeRemaining;
+    private float dashCooldownRemaining;
+    
+    // Timers
+    private float jumpBufferCounter;
+    private float coyoteTimeCounter;
 
-    // Public info
+    // Cached values
+    private bool hasAnimator;
+    private bool hasGunAnimator;
+    private const float groundedCheckVelocity = -2f;
+    private const float minHeightDifference = 0.01f;
+    
+    // Public state
     public bool IsGrounded { get; private set; }
     public bool IsMoving { get; private set; }
-    public bool IsRunning { get; private set; }
+    public bool IsDashing { get; private set; }
+    public float DashCooldownNormalized => Mathf.Clamp01(1f - (dashCooldownRemaining / dashCooldown));
 
     void Start()
     {
+        // Cache components
         controller = GetComponent<CharacterController>();
+        cachedTransform = transform;
+        
+        // Cache animator checks
+        hasAnimator = animator != null;
+        hasGunAnimator = gunAnimator != null;
 
+        // Initialize controller
         controller.height = normalHeight;
-        controller.center = new Vector3(0f, normalHeight / 2f, 0f);
-        transform.position += Vector3.up * (controller.height / 2f);
+        controller.center = new Vector3(0f, normalHeight * 0.5f, 0f);
+        cachedTransform.position += Vector3.up * (controller.height * 0.5f);
 
         if (cameraHolder != null)
+        {
             cameraHolder.localPosition = new Vector3(0f, cameraStandHeight, 0f);
+        }
 
         targetHeight = normalHeight;
 
+        // Lock cursor
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
 
     void Update()
     {
-        ReadInput();
+        CacheInput();
         HandleMouseLook();
-        HandleSpeed();
+        HandleDash();
+        DetermineSpeed();
         HandleCrouch();
-
         HandleJump();
         ApplyGravity();
-
         ApplyMovement();
-
-        UpdateAnimator();
+        UpdateAnimators();
     }
 
-    // ================= INPUT =================
+    // ================= INPUT CACHING =================
 
-    void ReadInput()
+    void CacheInput()
     {
+        // Cache all input in one place
         input.x = Input.GetAxisRaw("Horizontal");
         input.y = Input.GetAxisRaw("Vertical");
+        jumpPressed = Input.GetButtonDown("Jump");
+        dashPressed = Input.GetKeyDown(KeyCode.LeftShift);
+        mouseX = Input.GetAxis("Mouse X");
+        mouseY = Input.GetAxis("Mouse Y");
 
+        // Calculate derived state
         IsMoving = input.sqrMagnitude > 0.01f;
-        IsRunning = Input.GetKey(KeyCode.LeftShift) && !isCrouching;
-        if (Input.GetButtonDown("Jump"))
+        IsDashing = isDashing;
+
+        // Update jump buffer
+        jumpBufferCounter = jumpPressed ? jumpBufferTime : Mathf.Max(0f, jumpBufferCounter - Time.deltaTime);
+        
+        // Update dash cooldown
+        if (dashCooldownRemaining > 0f)
         {
-            jumpBufferCounter = jumpBufferTime;
+            dashCooldownRemaining -= Time.deltaTime;
         }
-        else
+    }
+
+    // ================= DASH =================
+
+    void HandleDash()
+    {
+        // Update dash timer
+        if (isDashing)
         {
-            jumpBufferCounter -= Time.deltaTime;
+            dashTimeRemaining -= Time.deltaTime;
+            if (dashTimeRemaining <= 0f)
+            {
+                isDashing = false;
+            }
+        }
+
+        // Initiate dash
+        if (dashPressed && !isDashing && dashCooldownRemaining <= 0f && !isCrouching)
+        {
+            // Determine dash direction based on input or forward if no input
+            Vector3 forward = cachedTransform.forward;
+            Vector3 right = cachedTransform.right;
+            
+            if (IsMoving)
+            {
+                dashDirection = (forward * input.y + right * input.x).normalized;
+            }
+            else
+            {
+                dashDirection = forward;
+            }
+
+            isDashing = true;
+            dashTimeRemaining = dashDuration;
+            dashCooldownRemaining = dashCooldown;
         }
     }
 
@@ -110,28 +183,56 @@ public class PlayerController : MonoBehaviour
 
     void HandleMouseLook()
     {
-        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+        if (Mathf.Approximately(mouseX, 0f) && Mathf.Approximately(mouseY, 0f))
+            return;
 
-        transform.Rotate(Vector3.up * mouseX);
+        cachedTransform.Rotate(0f, mouseX * mouseSensitivity, 0f);
 
-        rotationX -= mouseY;
-        rotationX = Mathf.Clamp(rotationX, -maxLookAngle, maxLookAngle);
+        rotationX = Mathf.Clamp(rotationX - mouseY * mouseSensitivity, -maxLookAngle, maxLookAngle);
         cameraHolder.localRotation = Quaternion.Euler(rotationX, 0f, 0f);
     }
 
     // ================= MOVEMENT =================
 
-    void HandleSpeed()
+    void DetermineSpeed()
     {
-        if (isCrouching)
-            currentSpeed = crouchSpeed;
-        else if (IsRunning)
-            currentSpeed = runSpeed;
+        if (isDashing)
+        {
+            currentSpeed = dashSpeed;
+        }
         else
-            currentSpeed = walkSpeed;
+        {
+            currentSpeed = isCrouching ? crouchSpeed : runSpeed;
+        }
     }
 
+    void ApplyMovement()
+    {
+        Vector3 moveDirection;
+
+        if (isDashing)
+        {
+            // Use cached dash direction
+            moveDirection = dashDirection;
+        }
+        else
+        {
+            // Calculate horizontal movement
+            Vector3 forward = cachedTransform.forward;
+            Vector3 right = cachedTransform.right;
+            
+            float moveX = input.x;
+            float moveZ = input.y;
+            
+            moveDirection = (forward * moveZ + right * moveX).normalized;
+        }
+        
+        // Combine horizontal and vertical movement
+        velocity.x = moveDirection.x * currentSpeed;
+        velocity.z = moveDirection.z * currentSpeed;
+        
+        controller.Move(velocity * Time.deltaTime);
+    }
 
     // ================= JUMP & GRAVITY =================
 
@@ -143,15 +244,18 @@ public class PlayerController : MonoBehaviour
         {
             coyoteTimeCounter = coyoteTimeMax;
 
-            // ВАЖНО: не затираем импульс прыжка
+            // Reset downward velocity when grounded
             if (velocity.y < 0f)
-                velocity.y = -2f;
+            {
+                velocity.y = groundedCheckVelocity;
+            }
         }
         else
         {
-            coyoteTimeCounter -= Time.deltaTime;
+            coyoteTimeCounter = Mathf.Max(0f, coyoteTimeCounter - Time.deltaTime);
         }
 
+        // Execute jump if buffered and coyote time active
         if (jumpBufferCounter > 0f && coyoteTimeCounter > 0f)
         {
             velocity.y = Mathf.Sqrt(jumpForce * -2f * gravity);
@@ -160,92 +264,91 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-
-
     void ApplyGravity()
     {
+        float gravityMultiplier;
+
         if (velocity.y < 0f)
         {
-            velocity.y += gravity * fallMultiplier * Time.deltaTime;
+            gravityMultiplier = fallMultiplier;
         }
         else if (velocity.y > 0f && !Input.GetButton("Jump"))
         {
-            velocity.y += gravity * lowJumpMultiplier * Time.deltaTime;
+            gravityMultiplier = lowJumpMultiplier;
         }
         else
         {
-            velocity.y += gravity * Time.deltaTime;
+            gravityMultiplier = 1f;
         }
+
+        velocity.y += gravity * gravityMultiplier * Time.deltaTime;
     }
-
-    void ApplyMovement()
-    {
-        Vector3 moveXZ =
-            transform.forward * input.y +
-            transform.right * input.x;
-
-        Vector3 finalMove =
-            moveXZ.normalized * currentSpeed +
-            Vector3.up * velocity.y;
-
-        controller.Move(finalMove * Time.deltaTime);
-    }
-
-
-
 
     // ================= CROUCH =================
 
     void HandleCrouch()
     {
-        if (Input.GetKeyDown(KeyCode.LeftControl))
+        bool crouchKeyDown = Input.GetKeyDown(KeyCode.LeftControl);
+        bool crouchKeyUp = Input.GetKeyUp(KeyCode.LeftControl);
+
+        // State change
+        if (crouchKeyDown)
         {
             isCrouching = true;
             targetHeight = crouchHeight;
+            heightTransitioning = true;
 
-            if (animator != null)
+            if (hasAnimator)
+            {
                 animator.SetBool("isCrouching", true);
+            }
         }
-        else if (Input.GetKeyUp(KeyCode.LeftControl))
+        else if (crouchKeyUp)
         {
             isCrouching = false;
             targetHeight = normalHeight;
+            heightTransitioning = true;
 
-            if (animator != null)
+            if (hasAnimator)
+            {
                 animator.SetBool("isCrouching", false);
+            }
         }
 
-        // Плавное изменение высоты CharacterController
-        controller.height = Mathf.Lerp(
-            controller.height,
-            targetHeight,
-            heightLerpSpeed * Time.deltaTime
-        );
-        float camTargetY = isCrouching ? cameraCrouchHeight : cameraStandHeight;
+        // Smooth height transition (only when transitioning)
+        if (heightTransitioning)
+        {
+            float newHeight = Mathf.Lerp(controller.height, targetHeight, heightLerpSpeed * Time.deltaTime);
+            
+            // Check if transition complete
+            if (Mathf.Abs(newHeight - targetHeight) < minHeightDifference)
+            {
+                newHeight = targetHeight;
+                heightTransitioning = false;
+            }
 
-        cameraHolder.localPosition = Vector3.Lerp(
-        cameraHolder.localPosition,
-        new Vector3(0f, camTargetY, 0f),
-        heightLerpSpeed * Time.deltaTime
-        );
+            controller.height = newHeight;
+            controller.center = new Vector3(0f, newHeight * 0.5f, 0f);
 
-        controller.center = new Vector3(
-            0f,
-            controller.height / 2f,
-            0f
-        );
+            // Update camera position
+            float camTargetY = isCrouching ? cameraCrouchHeight : cameraStandHeight;
+            cameraHolder.localPosition = Vector3.Lerp(
+                cameraHolder.localPosition,
+                new Vector3(0f, camTargetY, 0f),
+                heightLerpSpeed * Time.deltaTime
+            );
+        }
     }
 
     // ================= ANIMATION =================
 
-    void UpdateAnimator()
+    void UpdateAnimators()
     {
-        float movementAmount = new Vector2(input.x, input.y).magnitude;
+        if (!hasGunAnimator)
+            return;
 
-        if (gunAnimator != null)
-        {
-            gunAnimator.SetFloat("Speed", movementAmount);
-            gunAnimator.SetBool("IsRunning", IsRunning);
-        }
+        float movementMagnitude = input.magnitude;
+        gunAnimator.SetFloat("Speed", movementMagnitude);
+        gunAnimator.SetBool("IsDashing", isDashing);
     }
 }
