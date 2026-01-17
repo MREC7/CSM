@@ -4,13 +4,13 @@ using UnityEngine;
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
-    public float runSpeed = 13f;
+    public float runSpeed = 7f;
     public float crouchSpeed = 2f;
     public float jumpForce = 7f;
     public float gravity = -25f;
     
     [Header("Dash Settings")]
-    public float dashSpeed = 30f;
+    public float dashSpeed = 20f;
     public float dashDuration = 0.2f;
     public float dashCooldown = 1f;
 
@@ -90,8 +90,9 @@ public class PlayerController : MonoBehaviour
         // Initialize controller
         controller.height = normalHeight;
         controller.center = new Vector3(0f, normalHeight * 0.5f, 0f);
-        cachedTransform.position += Vector3.up * (controller.height * 0.5f);
-
+        
+        // НЕ поднимаем весь объект - CharacterController должен стоять на земле
+        
         if (cameraHolder != null)
         {
             cameraHolder.localPosition = new Vector3(0f, cameraStandHeight, 0f);
