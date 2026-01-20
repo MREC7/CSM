@@ -6876,26 +6876,46 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   runSpeed: 13
-  crouchSpeed: 2
+  sprintSpeed: 10
   jumpForce: 7
   gravity: -25
+  acceleration: 10
+  deceleration: 8
+  airControl: 0.3
+  sprintAcceleration: 8
   dashSpeed: 30
   dashDuration: 0.2
   dashCooldown: 1
-  crouchHeight: 1
-  normalHeight: 2
-  heightLerpSpeed: 10
+  dashEndDeceleration: 15
+  canJumpDuringDash: 0
   cameraHolder: {fileID: 1537104329}
   mouseSensitivity: 2
   maxLookAngle: 80
+  aimMouseSensitivityMultiplier: 0.6
+  dashCameraTilt: 5
+  cameraTiltSpeed: 8
+  landingCameraShake: 0.15
+  landingMinVelocity: -10
+  sprintCameraTilt: 2
+  sprintFOVIncrease: 5
+  enableHeadBob: 1
+  bobFrequency: 10
+  bobHorizontalAmplitude: 0.05
+  bobVerticalAmplitude: 0.08
+  sprintBobMultiplier: 1.5
   animator: {fileID: 2050577706}
   gunAnimator: {fileID: 5866666020736708203}
   jumpBufferTime: 0.12
   coyoteTimeMax: 0.12
   fallMultiplier: 1.8
   lowJumpMultiplier: 2.2
+  maxFallSpeed: 50
   cameraStandHeight: 1.6
-  cameraCrouchHeight: 1
+  useStamina: 1
+  maxStamina: 100
+  staminaDrainRate: 15
+  staminaRegenRate: 10
+  minStaminaToSprint: 10
 --- !u!114 &2050577705
 MonoBehaviour:
   m_ObjectHideFlags: 0
