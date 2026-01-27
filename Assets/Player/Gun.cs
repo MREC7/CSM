@@ -20,6 +20,8 @@ public class Gun : MonoBehaviour
     private CameraShake cameraShake;
     public Light muzzleLight;
     public float lightDuration = 0.05f;
+
+    [Header("Ammo Settings")]
     public int bulletsamount = 2;
     public int totalbulletscount = 30;
     public int defbulletsamount = 2;
@@ -27,11 +29,14 @@ public class Gun : MonoBehaviour
     private bool isReloading = false;
 
     private Coroutine flashRoutine;
-    private Coroutine reloadroutine;
 
     void Start()
     {
         cameraShake = FindObjectOfType<CameraShake>();
+        
+        // Инициализация: выключаем свет в начале
+        if (muzzleLight != null)
+            muzzleLight.enabled = false;
     }
 
     void Update()
@@ -39,6 +44,7 @@ public class Gun : MonoBehaviour
         HandleReload();
         HandleFire();
     }
+
     void HandleFire()
     {
         if (Input.GetButton("Fire1") && Time.time >= nextTimeToFire && bulletsamount > 0 && !isReloading)
@@ -47,46 +53,80 @@ public class Gun : MonoBehaviour
             bulletsamount -= 1;
             Shoot();
         }
-        else if (bulletsamount == 0 && !isReloading && totalbulletscount > 0)
-        {          
-            Reloading();
+    }
+
+    void HandleReload()
+    {
+        // Автоматическая перезарядка при пустом магазине
+        if (bulletsamount == 0 && !isReloading && totalbulletscount > 0)
+        {
+            StartReloading();
+        }
+        // Ручная перезарядка по кнопке R
+        else if (Input.GetKeyDown(KeyCode.R) && !isReloading && bulletsamount < defbulletsamount && totalbulletscount > 0)
+        {
+            StartReloading();
         }
     }
-    void Reloading()
+
+    void StartReloading()
     {
-        reloadroutine = StartCoroutine(ReloadingRoutine());
+        if (!isReloading)
+        {
+            StartCoroutine(ReloadingRoutine());
+        }
     }
+
     IEnumerator ReloadingRoutine()
     {
         isReloading = true;
-        gunAnimator.SetTrigger("Reload");
+        
+        if (gunAnimator != null)
+            gunAnimator.SetTrigger("Reload");
+
         yield return new WaitForSeconds(reloadTime);
-        totalbulletscount -= (defbulletsamount - bulletsamount);
-        bulletsamount += (defbulletsamount - bulletsamount);
+
+        // Вычисляем сколько патронов нужно добавить
+        int bulletsNeeded = defbulletsamount - bulletsamount;
+        
+        // Берём минимум из того что нужно и того что есть
+        int bulletsToReload = Mathf.Min(bulletsNeeded, totalbulletscount);
+        
+        // Обновляем количество патронов
+        bulletsamount += bulletsToReload;
+        totalbulletscount -= bulletsToReload;
+
         isReloading = false;
     }
 
     void Shoot()
     {
         PlayMuzzleLight();
+
         if (muzzleFlash != null)
             muzzleFlash.Play();
 
         if (gunAudio != null && gunShotSound != null)
             gunAudio.PlayOneShot(gunShotSound);
-        gunAnimator.SetTrigger("Shoot");
-        cameraShake.Shake();
 
+        if (gunAnimator != null)
+            gunAnimator.SetTrigger("Shoot");
+
+        if (cameraShake != null)
+            cameraShake.Shake();
 
         Ray ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+
         if (Physics.Raycast(ray, out RaycastHit hit, range))
         {
+            // Создаём эффект попадания
             if (hitEffectPrefab != null)
             {
                 GameObject effect = Instantiate(hitEffectPrefab, hit.point, Quaternion.LookRotation(hit.normal));
                 Destroy(effect, 1f);
             }
 
+            // Проверяем урон по цели
             Target target = hit.transform.GetComponent<Target>();
             if (target != null)
             {
@@ -97,6 +137,10 @@ public class Gun : MonoBehaviour
 
     void PlayMuzzleLight()
     {
+        if (muzzleLight == null)
+            return;
+
+        // Останавливаем предыдущую корутину если она есть
         if (flashRoutine != null)
             StopCoroutine(flashRoutine);
 
@@ -108,12 +152,5 @@ public class Gun : MonoBehaviour
         muzzleLight.enabled = true;
         yield return new WaitForSeconds(lightDuration);
         muzzleLight.enabled = false;
-    }
-    void HandleReload() {
-        if (Input.GetKeyDown(KeyCode.R) && gunAnimator != null && bulletsamount != defbulletsamount && totalbulletscount > 0)
-        {
-            Reloading();
-        }
-
     }
 }
