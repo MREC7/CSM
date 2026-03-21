@@ -6,23 +6,50 @@ public class EnemyAI : MonoBehaviour
     public NavMeshAgent agent;
     public Transform player;
 
-    public LayerMask whatIsGround, whatIsPlayer;
+    public LayerMask groundMask, playerMask, obstacleMask;
 
-    public Vector3 walkPoint;
-    bool walkPointSet;
+    [Header("Vision")]
+    public float viewAngle = 90f;
+    public float viewDistance = 20f;
+    public float detectionTime = 0.3f;
 
-    public float walkPointRange;
+    [Header("Ranges")]
+    public float attackRange = 10f;
 
-    public float timeBetweenAttacks;
-    bool alreadyAttacked;
-
-    public float sightRange, attackRange;
-
-    public bool playerInSightRange, playerInAttackRange;
-
+    [Header("Combat")]
+    public float fireRate = 1f;
     public GameObject projectile;
+    public Transform shootPoint;
 
+    [Header("Movement")]
+    public float patrolRadius = 10f;
+    public float searchDuration = 3f;
+
+    [Header("Stats")]
     public int health = 100;
+
+    private EnemyState currentState;
+
+    private float fireCooldown;
+    private float searchTimer;
+
+    private float detectTimer;
+    private bool playerDetected;
+
+    private Vector3 lastKnownPlayerPos;
+    private Vector3 patrolPoint;
+    private bool patrolPointSet;
+
+    private bool playerInAttackRange;
+
+    public enum EnemyState
+    {
+        Patrol,
+        Chase,
+        Attack,
+        Search,
+        Dead
+    }
 
     private void Awake()
     {
@@ -32,86 +59,217 @@ public class EnemyAI : MonoBehaviour
 
     private void Update()
     {
-        playerInSightRange = Physics.CheckSphere(transform.position, sightRange, whatIsPlayer);
-        playerInAttackRange = Physics.CheckSphere(transform.position, attackRange, whatIsPlayer);
-
-        if (!playerInSightRange && !playerInAttackRange)
-            Patroling();
-
-        if (playerInSightRange && !playerInAttackRange)
-            ChasePlayer();
-
-        if (playerInSightRange && playerInAttackRange)
-            AttackPlayer();
+        UpdatePerception();
+        UpdateState();
+        ExecuteState();
     }
 
-    private void Patroling()
+    // ================= PERCEPTION =================
+
+    void UpdatePerception()
     {
-        if (!walkPointSet)
-            SearchWalkPoint();
+        bool canSee = CanSeePlayer();
 
-        if (walkPointSet)
-            agent.SetDestination(walkPoint);
-
-        Vector3 distanceToWalkPoint = transform.position - walkPoint;
-
-        if (distanceToWalkPoint.magnitude < 1f)
-            walkPointSet = false;
-    }
-
-    private void SearchWalkPoint()
-    {
-        float randomZ = Random.Range(-walkPointRange, walkPointRange);
-        float randomX = Random.Range(-walkPointRange, walkPointRange);
-
-        walkPoint = new Vector3(
-            transform.position.x + randomX,
-            transform.position.y,
-            transform.position.z + randomZ
-        );
-
-        if (Physics.Raycast(walkPoint, -transform.up, 2f, whatIsGround))
-            walkPointSet = true;
-    }
-
-    private void ChasePlayer()
-    {
-        agent.SetDestination(player.position);
-    }
-
-    private void AttackPlayer()
-    {
-        agent.SetDestination(transform.position);
-        transform.LookAt(player);
-
-        if (!alreadyAttacked)
+        if (canSee)
         {
-            Rigidbody rb = Instantiate(projectile, transform.position, Quaternion.identity)
-                .GetComponent<Rigidbody>();
+            detectTimer += Time.deltaTime;
 
-            rb.AddForce(transform.forward * 32f, ForceMode.Impulse);
-            rb.AddForce(transform.up * 8f, ForceMode.Impulse);
+            if (detectTimer >= detectionTime)
+            {
+                playerDetected = true;
+                lastKnownPlayerPos = player.position;
+            }
+        }
+        else
+        {
+            detectTimer = 0f;
+        }
 
-            alreadyAttacked = true;
-            Invoke(nameof(ResetAttack), timeBetweenAttacks);
+        playerInAttackRange = playerDetected &&
+            Vector3.Distance(transform.position, player.position) < attackRange;
+    }
+
+    bool CanSeePlayer()
+    {
+        Vector3 origin = transform.position + Vector3.up * 1.5f;
+        Vector3 dirToPlayer = (player.position - origin).normalized;
+
+        float angle = Vector3.Angle(transform.forward, dirToPlayer);
+
+        if (angle < viewAngle / 2f)
+        {
+            float distance = Vector3.Distance(origin, player.position);
+
+            if (distance < viewDistance)
+            {
+                if (!Physics.Raycast(origin, dirToPlayer, distance, obstacleMask))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // ================= FSM =================
+
+    void UpdateState()
+    {
+        if (health <= 0)
+        {
+            currentState = EnemyState.Dead;
+            return;
+        }
+
+        if (playerDetected && playerInAttackRange)
+        {
+            currentState = EnemyState.Attack;
+        }
+        else if (playerDetected)
+        {
+            currentState = EnemyState.Chase;
+        }
+        else if (!playerDetected && searchTimer > 0)
+        {
+            currentState = EnemyState.Search;
+        }
+        else
+        {
+            currentState = EnemyState.Patrol;
         }
     }
 
-    private void ResetAttack()
+    void ExecuteState()
     {
-        alreadyAttacked = false;
+        switch (currentState)
+        {
+            case EnemyState.Patrol:
+                Patrol();
+                break;
+
+            case EnemyState.Chase:
+                Chase();
+                break;
+
+            case EnemyState.Attack:
+                Attack();
+                break;
+
+            case EnemyState.Search:
+                Search();
+                break;
+
+            case EnemyState.Dead:
+                Die();
+                break;
+        }
     }
 
-    public void TakeDamage(int damage)
-    {
-        health -= damage;
+    // ================= STATES =================
 
-        if (health <= 0)
-            Invoke(nameof(DestroyEnemy), 0.5f);
+    void Patrol()
+    {
+        if (!patrolPointSet)
+            SetPatrolPoint();
+
+        agent.SetDestination(patrolPoint);
+
+        if (Vector3.Distance(transform.position, patrolPoint) < 1.5f)
+            patrolPointSet = false;
     }
 
-    private void DestroyEnemy()
+    void Chase()
     {
-        Destroy(gameObject);
+        NavMeshHit hit;
+
+        if (NavMesh.SamplePosition(player.position, out hit, 2f, NavMesh.AllAreas))
+        {
+            agent.SetDestination(hit.position);
+        }
+
+        searchTimer = searchDuration;
+    }
+
+    void Attack()
+    {
+        agent.SetDestination(transform.position);
+
+        Vector3 lookDir = (player.position - transform.position).normalized;
+        lookDir.y = 0;
+
+        transform.forward = Vector3.Lerp(transform.forward, lookDir, Time.deltaTime * 10f);
+
+        if (fireCooldown <= 0f)
+        {
+            Shoot();
+            fireCooldown = 1f / fireRate;
+        }
+
+        fireCooldown -= Time.deltaTime;
+    }
+
+    void Search()
+    {
+        NavMeshHit hit;
+
+        if (NavMesh.SamplePosition(lastKnownPlayerPos, out hit, 2f, NavMesh.AllAreas))
+        {
+            agent.SetDestination(hit.position);
+        }
+
+        searchTimer -= Time.deltaTime;
+    }
+
+    void Die()
+    {
+        agent.enabled = false;
+        Destroy(gameObject, 2f);
+    }
+
+    // ================= ACTIONS =================
+
+    void Shoot()
+    {
+        Vector3 shootDir = (player.position - shootPoint.position).normalized;
+
+        GameObject bullet = Instantiate(projectile, shootPoint.position, Quaternion.LookRotation(shootDir));
+
+        Rigidbody rb = bullet.GetComponent<Rigidbody>();
+        rb.AddForce(shootDir * 40f, ForceMode.Impulse);
+    }
+
+    void SetPatrolPoint()
+    {
+        float randX = Random.Range(-patrolRadius, patrolRadius);
+        float randZ = Random.Range(-patrolRadius, patrolRadius);
+
+        Vector3 randomPoint = new Vector3(
+            transform.position.x + randX,
+            transform.position.y,
+            transform.position.z + randZ
+        );
+
+        NavMeshHit hit;
+
+        if (NavMesh.SamplePosition(randomPoint, out hit, 2f, NavMesh.AllAreas))
+        {
+            patrolPoint = hit.position;
+            patrolPointSet = true;
+        }
+    }
+
+    // ================= DAMAGE =================
+
+    public void TakeDamage(int dmg)
+    {
+        health -= dmg;
+
+        if (health > 0)
+        {
+            playerDetected = true;
+            lastKnownPlayerPos = player.position;
+            currentState = EnemyState.Chase;
+        }
     }
 }

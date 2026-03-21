@@ -271,8 +271,8 @@ MonoBehaviour:
         m_Version: 0
         m_Camera:
           bitDatas:
-            data1: 5770166122053581
-            data2: 12934340311651434520
+            data1: 5770234841530317
+            data2: 12934340328831303704
           lodBias: 1
           lodBiasMode: 0
           lodBiasQualityLevel: 2
@@ -280,7 +280,7 @@ MonoBehaviour:
           maximumLODLevelMode: 0
           maximumLODLevelQualityLevel: 2
           sssQualityMode: 0
-          sssQualityLevel: 0
+          sssQualityLevel: 2
           sssCustomSampleBudget: 20
           sssCustomDownsampleSteps: 0
           msaaMode: 1
