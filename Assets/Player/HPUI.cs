@@ -1,19 +1,27 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class PlayerUI : MonoBehaviour
+public class HPUI : MonoBehaviour
 {
-    public Slider healthSlider;
+    public Image heartFill;        // вместо Slider
     public PlayerHealth playerHealth;
 
     void Start()
     {
-        healthSlider.maxValue = playerHealth.maxHealth;
-        healthSlider.value = playerHealth.currentHealth;
+        UpdateHeart();
     }
 
     void Update()
     {
-        healthSlider.value = playerHealth.currentHealth;
+        UpdateHeart();
+    }
+
+    void UpdateHeart()
+    {
+        float t = playerHealth.currentHealth / playerHealth.maxHealth;
+
+        heartFill.fillAmount = t;
+
+        heartFill.color = Color.Lerp(Color.black, Color.white, t);
     }
 }

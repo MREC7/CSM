@@ -6,7 +6,7 @@ public class EnemyAI : MonoBehaviour
     public NavMeshAgent agent;
     public Transform player;
 
-    public LayerMask groundMask, playerMask, obstacleMask;
+    public LayerMask obstacleMask;
 
     [Header("Vision")]
     public float viewAngle = 90f;
@@ -42,6 +42,10 @@ public class EnemyAI : MonoBehaviour
 
     private bool playerInAttackRange;
 
+    private float stuckTimer;
+    public Transform[] patrolPoints;
+    private int currentPatrolIndex;
+
     public enum EnemyState
     {
         Patrol,
@@ -55,6 +59,9 @@ public class EnemyAI : MonoBehaviour
     {
         player = GameObject.Find("Player").transform;
         agent = GetComponent<NavMeshAgent>();
+
+        agent.stoppingDistance = 1.2f;
+        agent.autoBraking = true;
     }
 
     private void Update()
@@ -170,20 +177,30 @@ public class EnemyAI : MonoBehaviour
 
     void Patrol()
     {
-        if (!patrolPointSet)
-            SetPatrolPoint();
+        if (patrolPoints.Length == 0)
+            return;
 
-        agent.SetDestination(patrolPoint);
+        agent.SetDestination(patrolPoints[currentPatrolIndex].position);
 
-        if (Vector3.Distance(transform.position, patrolPoint) < 1.5f)
-            patrolPointSet = false;
+        if (!agent.pathPending && agent.remainingDistance < 1.5f)
+        {
+            currentPatrolIndex = (currentPatrolIndex + 1) % patrolPoints.Length;
+        }
+        agent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+        agent.avoidancePriority = Random.Range(30, 60);
     }
 
     void Chase()
     {
+        Vector3 dirToPlayer = (transform.position - player.position).normalized;
+
+        Vector3 sideOffset = Vector3.Cross(Vector3.up, dirToPlayer) * Random.Range(-3f, 3f);
+
+        Vector3 targetPos = player.position + sideOffset;
+
         NavMeshHit hit;
 
-        if (NavMesh.SamplePosition(player.position, out hit, 2f, NavMesh.AllAreas))
+        if (NavMesh.SamplePosition(targetPos, out hit, 3f, NavMesh.AllAreas))
         {
             agent.SetDestination(hit.position);
         }
@@ -195,7 +212,18 @@ public class EnemyAI : MonoBehaviour
     {
         agent.SetDestination(transform.position);
 
-        Vector3 lookDir = (player.position - transform.position).normalized;
+        Vector3 origin = transform.position + Vector3.up * 1.5f;
+        Vector3 dir = (player.position - origin).normalized;
+
+        float dist = Vector3.Distance(origin, player.position);
+
+        if (Physics.Raycast(origin, dir, dist, obstacleMask))
+        {
+            currentState = EnemyState.Chase;
+            return;
+        }
+
+        Vector3 lookDir = dir;
         lookDir.y = 0;
 
         transform.forward = Vector3.Lerp(transform.forward, lookDir, Time.deltaTime * 10f);
@@ -241,22 +269,34 @@ public class EnemyAI : MonoBehaviour
 
     void SetPatrolPoint()
     {
-        float randX = Random.Range(-patrolRadius, patrolRadius);
-        float randZ = Random.Range(-patrolRadius, patrolRadius);
-
-        Vector3 randomPoint = new Vector3(
-            transform.position.x + randX,
-            transform.position.y,
-            transform.position.z + randZ
-        );
-
-        NavMeshHit hit;
-
-        if (NavMesh.SamplePosition(randomPoint, out hit, 2f, NavMesh.AllAreas))
+        for (int i = 0; i < 10; i++)
         {
-            patrolPoint = hit.position;
-            patrolPointSet = true;
+            float randX = Random.Range(-patrolRadius, patrolRadius);
+            float randZ = Random.Range(-patrolRadius, patrolRadius);
+
+            Vector3 randomPoint = new Vector3(
+                transform.position.x + randX,
+                transform.position.y,
+                transform.position.z + randZ
+            );
+
+            NavMeshHit hit;
+
+            if (NavMesh.SamplePosition(randomPoint, out hit, 5f, NavMesh.AllAreas))
+            {
+                NavMeshPath path = new NavMeshPath();
+
+                if (agent.CalculatePath(hit.position, path) &&
+                    path.status == NavMeshPathStatus.PathComplete)
+                {
+                    patrolPoint = hit.position;
+                    patrolPointSet = true;
+                    return;
+                }
+            }
         }
+
+        patrolPointSet = false;
     }
 
     // ================= DAMAGE =================
