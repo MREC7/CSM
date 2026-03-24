@@ -118,21 +118,21 @@ public class Gun : MonoBehaviour
         Ray ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
 
         if (Physics.Raycast(ray, out RaycastHit hit, range))
-        {
-            // Создаём эффект попадания
-            if (hitEffectPrefab != null)
-            {
-                GameObject effect = Instantiate(hitEffectPrefab, hit.point, Quaternion.LookRotation(hit.normal));
-                Destroy(effect, 1f);
-            }
+{
+    EnemyAI enemy = hit.transform.GetComponentInParent<EnemyAI>();
+    if (enemy != null)
+    {
+        enemy.TakeDamage((int)damage);
+        return;
+    }
 
-            // Проверяем урон по цели
-            Target target = hit.transform.GetComponent<Target>();
-            if (target != null)
-            {
-                target.TakeDamage(damage);
-            }
-        }
+    PlayerHealth player = hit.transform.GetComponentInParent<PlayerHealth>();
+    if (player != null)
+    {
+        player.TakeDamage(damage);
+        return;
+    }
+}
     }
 
     void PlayMuzzleLight()
